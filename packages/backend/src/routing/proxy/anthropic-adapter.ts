@@ -352,8 +352,8 @@ export function applyAnthropicMessagesMutations(
   if (result.max_tokens === undefined) result.max_tokens = 4096;
 
   const thinkingLookup = options?.thinkingLookup;
-  if (thinkingLookup && Array.isArray(body.messages)) {
-    result.messages = (body.messages as Array<Record<string, unknown>>).map((m) => {
+  if (thinkingLookup && Array.isArray(result.messages)) {
+    result.messages = (result.messages as Array<Record<string, unknown>>).map((m) => {
       if (m.role !== 'assistant' || !Array.isArray(m.content)) return m;
       const content = m.content as ContentBlock[];
       const firstToolUse = content.find((b) => b.type === 'tool_use');
