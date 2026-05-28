@@ -38,7 +38,10 @@ env:
 jobs:
   validate:
     name: Build (validate, ${{ matrix.platform.arch }})
-    if: github.event_name == 'pull_request'
+    # Upstream-only: this fork uses .github/workflows/docker-image.yml to
+    # build/publish its own image to GHCR. Skip the upstream Dockerhub
+    # publish path entirely on forks.
+    if: github.event_name == 'pull_request' && github.repository == 'mnfst/manifest'
     strategy:
       fail-fast: false
       matrix:
@@ -62,7 +65,7 @@ jobs:
 
   build:
     name: Build (${{ matrix.platform.arch }})
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.repository == 'mnfst/manifest'
     strategy:
       fail-fast: true
       matrix:
@@ -117,7 +120,7 @@ jobs:
 
   merge:
     name: Merge & Publish
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.repository == 'mnfst/manifest'
     needs: build
     runs-on: ubuntu-latest
     permissions:
