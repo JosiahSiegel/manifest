@@ -2225,6 +2225,7 @@ describe('Anthropic Adapter', () => {
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1024,
         messages: [{ role: 'user', content: 'hi' }],
+        stream: true,
         temperature: 0.5,
         top_p: 0.9,
         top_k: 40,
@@ -2232,10 +2233,12 @@ describe('Anthropic Adapter', () => {
         thinking: { type: 'enabled', budget_tokens: 1024 },
         metadata: { user_id: 'u' },
         tool_choice: { type: 'auto' },
+        service_tier: 'auto',
       });
       expect(result).toMatchObject({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1024,
+        stream: true,
         temperature: 0.5,
         top_p: 0.9,
         top_k: 40,
@@ -2243,7 +2246,34 @@ describe('Anthropic Adapter', () => {
         thinking: { type: 'enabled', budget_tokens: 1024 },
         metadata: { user_id: 'u' },
         tool_choice: { type: 'auto' },
+        service_tier: 'auto',
       });
+    });
+
+    it('passes context_management through for provider-client beta header forwarding', () => {
+      const contextManagement = { edits: [{ type: 'clear_tool_uses_20250919' }] };
+      const result = applyAnthropicMessagesMutations({
+        model: 'claude-sonnet-4-20250514',
+        messages: [{ role: 'user', content: 'hi' }],
+        context_management: contextManagement,
+      });
+
+      expect(result).toHaveProperty('context_management', contextManagement);
+      expect(result).toMatchObject({
+        model: 'claude-sonnet-4-20250514',
+        messages: [{ role: 'user', content: 'hi' }],
+        max_tokens: 4096,
+      });
+    });
+
+    it('passes through unknown top-level fields so future Anthropic features work without code changes', () => {
+      const result = applyAnthropicMessagesMutations({
+        model: 'claude-sonnet-4-20250514',
+        messages: [{ role: 'user', content: 'hi' }],
+        future_beta_feature: { enabled: true },
+      });
+
+      expect(result).toHaveProperty('future_beta_feature', { enabled: true });
     });
   });
 
