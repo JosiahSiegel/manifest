@@ -77,10 +77,14 @@ function safeParseArgs(args: string | undefined): unknown {
 
 /* ── Request helpers ── */
 
+function isSystemLikeRole(role: unknown): boolean {
+  return role === 'system' || role === 'developer';
+}
+
 function extractSystemBlocks(messages: OpenAIMessage[]): ContentBlock[] {
   const blocks: ContentBlock[] = [];
   for (const msg of messages) {
-    if (msg.role !== 'system' && msg.role !== 'developer') continue;
+    if (!isSystemLikeRole(msg.role)) continue;
     if (typeof msg.content === 'string') {
       blocks.push({ type: 'text', text: msg.content });
     } else if (Array.isArray(msg.content)) {
@@ -92,6 +96,26 @@ function extractSystemBlocks(messages: OpenAIMessage[]): ContentBlock[] {
     }
   }
   return blocks;
+}
+
+function normalizeSystemBlocks(system: unknown): ContentBlock[] {
+  if (typeof system === 'string') return system ? [{ type: 'text', text: system }] : [];
+  if (Array.isArray(system)) return (system as ContentBlock[]).map((b) => ({ ...b }));
+  return [];
+}
+
+function finalizeSystemBlocks(
+  systemBlocks: ContentBlock[],
+  options?: AnthropicRequestOptions,
+): ContentBlock[] {
+  const finalized = systemBlocks.map((block) => ({ ...block }));
+  if (options?.injectCacheControl !== false && finalized.length > 0) {
+    finalized[finalized.length - 1].cache_control = CACHE;
+  }
+  if (options?.injectSubscriptionIdentity) {
+    finalized.unshift({ ...SUBSCRIPTION_IDENTITY_BLOCK });
+  }
+  return finalized;
 }
 
 function toContentBlocks(content: unknown): ContentBlock[] {
@@ -108,7 +132,7 @@ function convertMessage(
   msg: OpenAIMessage,
   thinkingLookup?: ThinkingBlockLookup,
 ): { role: 'user' | 'assistant'; content: ContentBlock[] } | null {
-  if (msg.role === 'system' || msg.role === 'developer') return null;
+  if (isSystemLikeRole(msg.role)) return null;
 
   if (msg.role === 'tool') {
     const text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content ?? '');
@@ -189,16 +213,7 @@ export function toAnthropicRequest(
 ): Record<string, unknown> {
   const shouldCache = options?.injectCacheControl !== false;
   const messages = (body.messages as OpenAIMessage[]) || [];
-  const systemBlocks = extractSystemBlocks(messages);
-  if (systemBlocks.length > 0 && shouldCache) {
-    systemBlocks[systemBlocks.length - 1].cache_control = CACHE;
-  }
-
-  // Subscription OAuth tokens require the Claude Code agent identity as the
-  // first system block to access sonnet/opus models (haiku works without it).
-  if (options?.injectSubscriptionIdentity) {
-    systemBlocks.unshift({ ...SUBSCRIPTION_IDENTITY_BLOCK });
-  }
+  const systemBlocks = finalizeSystemBlocks(extractSystemBlocks(messages), options);
 
   const thinkingLookup = options?.thinkingLookup;
   const converted = messages.map((msg) => convertMessage(msg, thinkingLookup)).filter(Boolean);
@@ -289,26 +304,33 @@ export function applyAnthropicMessagesMutations(
   const shouldCache = options?.injectCacheControl !== false;
   const result: Record<string, unknown> = { ...body };
 
+  // Relocate stray system/developer messages from messages[] into the
+  // top-level `system` field. Native Anthropic Messages API rejects
+  // `role: "system"` / `role: "developer"` inside messages — they must
+  // live in the `system` top-level field. Some clients (e.g. agent SDKs
+  // sending OpenAI-shaped messages to /v1/messages) put them in the
+  // messages array. extractSystemBlocks is reused from the chat-completions
+  // conversion path so the logic stays DRY.
+  const straySystemBlocks = Array.isArray(body.messages)
+    ? extractSystemBlocks(body.messages as OpenAIMessage[])
+    : [];
+  if (straySystemBlocks.length > 0) {
+    result.system = [...normalizeSystemBlocks(body.system), ...straySystemBlocks];
+    result.messages = (body.messages as Array<Record<string, unknown>>).filter(
+      (m) => !isSystemLikeRole(m.role),
+    );
+  }
+
   // Normalize `system` to a content-block array so cache_control + identity
   // injection have a uniform target. Anthropic accepts either a bare string
   // or an array of blocks; we always emit the array form when either
   // mutation needs to happen, otherwise we leave a string system intact.
   const needsBlockSystem =
     options?.injectSubscriptionIdentity ||
-    (shouldCache && (typeof body.system === 'string' ? body.system : Array.isArray(body.system)));
+    (shouldCache &&
+      (typeof result.system === 'string' ? result.system : Array.isArray(result.system)));
   if (needsBlockSystem) {
-    let systemBlocks: ContentBlock[] = [];
-    if (typeof body.system === 'string') {
-      if (body.system) systemBlocks.push({ type: 'text', text: body.system });
-    } else if (Array.isArray(body.system)) {
-      systemBlocks = (body.system as ContentBlock[]).map((b) => ({ ...b }));
-    }
-    if (shouldCache && systemBlocks.length > 0) {
-      systemBlocks[systemBlocks.length - 1].cache_control = CACHE;
-    }
-    if (options?.injectSubscriptionIdentity) {
-      systemBlocks.unshift({ ...SUBSCRIPTION_IDENTITY_BLOCK });
-    }
+    const systemBlocks = finalizeSystemBlocks(normalizeSystemBlocks(result.system), options);
     if (systemBlocks.length > 0) {
       result.system = systemBlocks;
     } else {
