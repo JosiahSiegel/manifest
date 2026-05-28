@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.SYNC_UPSTREAM_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Configure git author
         run: |
@@ -68,13 +68,27 @@ jobs:
       - name: Open or update pull request
         if: steps.changes.outputs.has_changes == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SYNC_UPSTREAM_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          gh pr create \
-            --base main \
-            --head sync/upstream-main \
-            --title "chore: sync upstream main" \
-            --body-file /tmp/sync-pr-body.md \
-          || gh pr edit sync/upstream-main \
-            --title "chore: sync upstream main" \
-            --body-file /tmp/sync-pr-body.md
+          title="chore: sync upstream main"
+          head="sync/upstream-main"
+
+          echo "Looking for existing PR with base=main head=$head"
+          pr_number="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=main" \
+            --paginate \
+            --jq ".[] | select(.head.ref == \"${head}\") | .number" \
+            2>/dev/null | head -1 || echo "")"
+
+          if [ -n "$pr_number" ]; then
+            echo "Updating existing PR #$pr_number"
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" \
+              -f title="$title" \
+              -F body=@/tmp/sync-pr-body.md
+          else
+            echo "Creating PR with base=main head=$head"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/pulls" \
+              -f title="$title" \
+              -F body=@/tmp/sync-pr-body.md \
+              -f base=main \
+              -f head="$head"
+          fi
