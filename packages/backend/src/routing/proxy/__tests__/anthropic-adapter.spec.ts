@@ -2043,6 +2043,38 @@ describe('Anthropic Adapter', () => {
       ]);
     });
 
+    it('relocates system and developer messages into top-level system for native Messages passthrough', () => {
+      const result = applyAnthropicMessagesMutations({
+        messages: [
+          { role: 'system', content: 'You are helpful.' },
+          { role: 'developer', content: 'Be concise.' },
+          { role: 'user', content: 'hi' },
+        ],
+      });
+
+      expect(result.system).toEqual([
+        { type: 'text', text: 'You are helpful.' },
+        { type: 'text', text: 'Be concise.', cache_control: { type: 'ephemeral' } },
+      ]);
+      expect(result.messages).toEqual([{ role: 'user', content: 'hi' }]);
+    });
+
+    it('merges relocated system messages after an existing top-level system', () => {
+      const result = applyAnthropicMessagesMutations({
+        system: 'Existing instructions.',
+        messages: [
+          { role: 'system', content: 'Additional instructions.' },
+          { role: 'user', content: 'hi' },
+        ],
+      });
+
+      expect(result.system).toEqual([
+        { type: 'text', text: 'Existing instructions.' },
+        { type: 'text', text: 'Additional instructions.', cache_control: { type: 'ephemeral' } },
+      ]);
+      expect(result.messages).toEqual([{ role: 'user', content: 'hi' }]);
+    });
+
     it('leaves string system intact when no mutations are needed', () => {
       const result = applyAnthropicMessagesMutations(
         {
