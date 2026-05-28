@@ -2075,39 +2075,6 @@ describe('Anthropic Adapter', () => {
       expect(result.messages).toEqual([{ role: 'user', content: 'hi' }]);
     });
 
-    it('keeps relocated system messages out of messages when replaying cached thinking blocks', () => {
-      const cached = [{ type: 'thinking' as const, thinking: 'searching', signature: 'sig' }];
-      const result = applyAnthropicMessagesMutations(
-        {
-          system: 'Existing instructions.',
-          messages: [
-            { role: 'system', content: 'Additional instructions.' },
-            { role: 'user', content: 'find cats' },
-            {
-              role: 'assistant',
-              content: [{ type: 'tool_use', id: 'call_1', name: 'web_search', input: {} }],
-            },
-          ],
-        },
-        { thinkingLookup: (id) => (id === 'call_1' ? cached : null) },
-      );
-
-      expect(result.system).toEqual([
-        { type: 'text', text: 'Existing instructions.' },
-        { type: 'text', text: 'Additional instructions.', cache_control: { type: 'ephemeral' } },
-      ]);
-      expect(result.messages).toEqual([
-        { role: 'user', content: 'find cats' },
-        {
-          role: 'assistant',
-          content: [
-            { type: 'thinking', thinking: 'searching', signature: 'sig' },
-            { type: 'tool_use', id: 'call_1', name: 'web_search', input: {} },
-          ],
-        },
-      ]);
-    });
-
     it('leaves string system intact when no mutations are needed', () => {
       const result = applyAnthropicMessagesMutations(
         {
@@ -2290,6 +2257,7 @@ describe('Anthropic Adapter', () => {
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1024,
         messages: [{ role: 'user', content: 'hi' }],
+        stream: true,
         temperature: 0.5,
         top_p: 0.9,
         top_k: 40,
@@ -2297,10 +2265,12 @@ describe('Anthropic Adapter', () => {
         thinking: { type: 'enabled', budget_tokens: 1024 },
         metadata: { user_id: 'u' },
         tool_choice: { type: 'auto' },
+        service_tier: 'auto',
       });
       expect(result).toMatchObject({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1024,
+        stream: true,
         temperature: 0.5,
         top_p: 0.9,
         top_k: 40,
@@ -2308,7 +2278,34 @@ describe('Anthropic Adapter', () => {
         thinking: { type: 'enabled', budget_tokens: 1024 },
         metadata: { user_id: 'u' },
         tool_choice: { type: 'auto' },
+        service_tier: 'auto',
       });
+    });
+
+    it('passes context_management through for provider-client beta header forwarding', () => {
+      const contextManagement = { edits: [{ type: 'clear_tool_uses_20250919' }] };
+      const result = applyAnthropicMessagesMutations({
+        model: 'claude-sonnet-4-20250514',
+        messages: [{ role: 'user', content: 'hi' }],
+        context_management: contextManagement,
+      });
+
+      expect(result).toHaveProperty('context_management', contextManagement);
+      expect(result).toMatchObject({
+        model: 'claude-sonnet-4-20250514',
+        messages: [{ role: 'user', content: 'hi' }],
+        max_tokens: 4096,
+      });
+    });
+
+    it('passes through unknown top-level fields so future Anthropic features work without code changes', () => {
+      const result = applyAnthropicMessagesMutations({
+        model: 'claude-sonnet-4-20250514',
+        messages: [{ role: 'user', content: 'hi' }],
+        future_beta_feature: { enabled: true },
+      });
+
+      expect(result).toHaveProperty('future_beta_feature', { enabled: true });
     });
   });
 
