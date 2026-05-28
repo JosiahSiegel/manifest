@@ -4,7 +4,7 @@ import { XAI_RESPONSES_ONLY_RE } from '../../common/constants/xai-models';
 import { PROVIDER_ENDPOINTS, ProviderEndpoint, resolveEndpointKey } from './provider-endpoints';
 import { validatePublicUrl } from '../../common/utils/url-validation';
 import { isSelfHosted } from '../../common/utils/detect-self-hosted';
-import { resolveSubscriptionEndpointKey } from './provider-hooks';
+import { mergeProviderHeaders, resolveSubscriptionEndpointKey } from './provider-hooks';
 import { injectOpenRouterCacheControl } from './cache-injection';
 import {
   applyAnthropicMessagesMutations,
@@ -50,7 +50,6 @@ const PROVIDER_TIMEOUT_MS =
   Number.isFinite(parsedProviderTimeout) && parsedProviderTimeout > 0
     ? parsedProviderTimeout
     : 180_000;
-
 /**
  * Strip vendor prefix from model name (e.g. "anthropic/claude-sonnet-4" → "claude-sonnet-4").
  * Models synced from OpenRouter use vendor prefixes, but native APIs expect bare names.
@@ -90,6 +89,7 @@ export class ProviderClient {
       stream,
       signal,
       extraHeaders,
+      inboundHeaders,
       customEndpoint,
       authType,
     } = opts;
@@ -144,7 +144,8 @@ export class ProviderClient {
       providerResource: opts.providerResource,
     });
 
-    const finalHeaders = extraHeaders ? { ...headers, ...extraHeaders } : headers;
+    const baseHeaders = mergeProviderHeaders(provider, headers, { inboundHeaders });
+    const finalHeaders = extraHeaders ? { ...baseHeaders, ...extraHeaders } : baseHeaders;
 
     this.logger.debug(`Forwarding to ${endpointKey}: ${url.replace(/key=[^&]+/, 'key=***')}`);
 
