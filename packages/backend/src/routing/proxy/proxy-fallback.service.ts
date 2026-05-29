@@ -53,8 +53,13 @@ import {
   buildTransportErrorResponse,
   describeTransportError,
 } from './proxy-transport';
-import type { SignatureLookup, ThinkingBlockLookup, ReasoningContentLookup } from './proxy-types';
-import type { ProxyApiMode } from './proxy-types';
+import type {
+  NormalizedInboundHeaders,
+  ProxyApiMode,
+  SignatureLookup,
+  ThinkingBlockLookup,
+  ReasoningContentLookup,
+} from './proxy-types';
 
 export interface FailedFallback {
   model: string;
@@ -138,6 +143,7 @@ export class ProxyFallbackService {
     fallbackRoutes?: ModelRoute[] | null,
     paramMergeContext?: ParamMergeContext,
     reasoningContentLookup?: ReasoningContentLookup,
+    inboundHeaders?: NormalizedInboundHeaders,
   ): Promise<{
     success: {
       forward: ForwardResult;
@@ -258,6 +264,7 @@ export class ProxyFallbackService {
         thinkingLookup,
         reasoningContentLookup,
         paramMergeContext,
+        inboundHeaders,
       });
 
       if (forward.response.ok) {
@@ -304,6 +311,7 @@ export class ProxyFallbackService {
     thinkingLookup?: ThinkingBlockLookup;
     reasoningContentLookup?: ReasoningContentLookup;
     paramMergeContext?: ParamMergeContext;
+    inboundHeaders?: NormalizedInboundHeaders;
   }): Promise<ForwardResult> {
     try {
       return await this.forwardToProvider(opts);
@@ -343,6 +351,7 @@ export class ProxyFallbackService {
     thinkingLookup?: ThinkingBlockLookup;
     reasoningContentLookup?: ReasoningContentLookup;
     paramMergeContext?: ParamMergeContext;
+    inboundHeaders?: NormalizedInboundHeaders;
   }): Promise<ForwardResult> {
     const {
       provider,
@@ -480,6 +489,7 @@ export class ProxyFallbackService {
       customEndpoint,
       authType,
       apiMode: opts.apiMode,
+      inboundHeaders: opts.inboundHeaders,
       signatureLookup,
       thinkingLookup,
       reasoningContentLookup,

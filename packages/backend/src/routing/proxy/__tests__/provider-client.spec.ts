@@ -522,6 +522,55 @@ describe('ProviderClient', () => {
       expect(headers['anthropic-beta']).toBeUndefined();
     });
 
+    it('forwards client-supplied Anthropic beta headers dynamically', async () => {
+      mockFetch.mockResolvedValue(new Response('{}', { status: 200 }));
+
+      await client.forward({
+        provider: 'anthropic',
+        apiKey: 'sk-ant-test',
+        model: 'claude-sonnet-4-20250514',
+        apiMode: 'messages',
+        inboundHeaders: {
+          'anthropic-beta': 'compact-2026-01-12, fine-grained-tool-streaming-2025-05-14',
+        },
+        body: {
+          messages: [{ role: 'user', content: 'Hello' }],
+          context_management: { edits: [{ type: 'clear_tool_uses_20250919' }] },
+        },
+        stream: false,
+      });
+
+      const request = mockFetch.mock.calls[0][1];
+      expect(request.headers['anthropic-beta']).toBe(
+        'compact-2026-01-12,fine-grained-tool-streaming-2025-05-14',
+      );
+      const sentBody = JSON.parse(request.body);
+      expect(sentBody.context_management).toEqual({
+        edits: [{ type: 'clear_tool_uses_20250919' }],
+      });
+    });
+
+    it('merges client-supplied Anthropic betas with subscription OAuth beta', async () => {
+      mockFetch.mockResolvedValue(new Response('{}', { status: 200 }));
+
+      await client.forward({
+        provider: 'anthropic',
+        apiKey: 'oauth-token',
+        model: 'claude-sonnet-4-20250514',
+        apiMode: 'messages',
+        authType: 'subscription',
+        inboundHeaders: { 'anthropic-beta': 'compact-2026-01-12, oauth-2025-04-20' },
+        body: {
+          messages: [{ role: 'user', content: 'Hello' }],
+          context_management: { edits: [{ type: 'clear_tool_uses_20250919' }] },
+        },
+        stream: false,
+      });
+
+      const headers = mockFetch.mock.calls[0][1].headers;
+      expect(headers['anthropic-beta']).toBe('oauth-2025-04-20,compact-2026-01-12');
+    });
+
     it('does not include top-level cache_control in Anthropic request body', async () => {
       mockFetch.mockResolvedValue(new Response('{}', { status: 200 }));
 

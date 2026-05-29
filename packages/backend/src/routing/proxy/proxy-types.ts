@@ -25,6 +25,7 @@ export type ThinkingBlockLookup = (firstToolUseId: string) => ThinkingBlock[] | 
 export type ReasoningContentLookup = (firstToolCallId: string) => string | null;
 
 export type ProxyApiMode = 'chat_completions' | 'responses' | 'messages';
+export type NormalizedInboundHeaders = Record<string, string | undefined>;
 
 export interface OpenAIMessage {
   role: string;
@@ -49,6 +50,7 @@ export interface ForwardOptions {
   stream: boolean;
   signal?: AbortSignal;
   extraHeaders?: Record<string, string>;
+  inboundHeaders?: NormalizedInboundHeaders;
   customEndpoint?: ProviderEndpoint;
   authType?: string;
   /** Lookup for re-injecting cached thought_signature values (Google only). */

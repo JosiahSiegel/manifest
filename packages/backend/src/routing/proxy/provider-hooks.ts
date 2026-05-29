@@ -1,3 +1,5 @@
+import type { NormalizedInboundHeaders } from './proxy-types';
+
 /**
  * Provider-specific hooks — data-driven lookups that replace scattered
  * `if (provider === 'foo')` chains across the proxy layer.
@@ -44,4 +46,49 @@ export function buildProviderExtraHeaders(
   const builder = PROVIDER_EXTRA_HEADER_BUILDERS[provider.toLowerCase()];
   if (!builder) return undefined;
   return builder(sessionKey);
+}
+
+function mergeAnthropicBeta(
+  headers: Record<string, string>,
+  inboundBeta: string | undefined,
+): Record<string, string> {
+  if (!inboundBeta?.trim()) return headers;
+  const existing = headers['anthropic-beta'];
+  const betas = [...(existing ? existing.split(',') : []), ...inboundBeta.split(',')]
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const uniqueBetas = [...new Set(betas)];
+  return uniqueBetas.length === 0
+    ? headers
+    : { ...headers, 'anthropic-beta': uniqueBetas.join(',') };
+}
+
+export interface ProviderHeaderMergeContext {
+  inboundHeaders?: NormalizedInboundHeaders;
+}
+
+const PROVIDER_HEADER_MERGERS = new Map<
+  string,
+  (headers: Record<string, string>, context: ProviderHeaderMergeContext) => Record<string, string>
+>([
+  [
+    'anthropic',
+    (headers, context) => mergeAnthropicBeta(headers, context.inboundHeaders?.['anthropic-beta']),
+  ],
+]);
+
+export function mergeProviderHeaders(
+  provider: string,
+  headers: Record<string, string>,
+  context: ProviderHeaderMergeContext,
+): Record<string, string> {
+  const normalizedProvider = provider.toLowerCase();
+  if (!PROVIDER_HEADER_MERGERS.has(normalizedProvider)) {
+    return headers;
+  }
+  const merger = PROVIDER_HEADER_MERGERS.get(normalizedProvider);
+  if (typeof merger !== 'function') {
+    return headers;
+  }
+  return merger(headers, context);
 }
