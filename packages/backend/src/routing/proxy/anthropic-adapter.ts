@@ -75,6 +75,118 @@ function safeParseArgs(args: string | undefined): unknown {
   }
 }
 
+const ANTHROPIC_TOOL_USE_ID_RE = /^[a-zA-Z0-9_-]+$/;
+
+interface ToolUseIdContext {
+  rewritten: Map<string, string>;
+  used: Set<string>;
+  next: number;
+}
+
+function isValidAnthropicToolUseId(id: string): boolean {
+  return ANTHROPIC_TOOL_USE_ID_RE.test(id);
+}
+
+function createToolUseIdContext(messages: Array<Record<string, unknown>>): ToolUseIdContext {
+  const used = new Set<string>();
+  for (const msg of messages) {
+    if (!Array.isArray(msg.content)) continue;
+    for (const block of msg.content as ContentBlock[]) {
+      if (!block || typeof block !== 'object') continue;
+      if (block.type === 'tool_use' && typeof block.id === 'string') {
+        if (isValidAnthropicToolUseId(block.id)) used.add(block.id);
+      } else if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
+        if (isValidAnthropicToolUseId(block.tool_use_id)) used.add(block.tool_use_id);
+      }
+    }
+  }
+  return { rewritten: new Map(), used, next: 1 };
+}
+
+function normalizeAnthropicToolUseId(id: unknown, context: ToolUseIdContext): unknown {
+  if (typeof id !== 'string') return id;
+  if (isValidAnthropicToolUseId(id)) {
+    context.used.add(id);
+    return id;
+  }
+
+  const existing = context.rewritten.get(id);
+  if (existing) return existing;
+
+  const base = id.replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'tool_use';
+  let candidate = base;
+  while (context.used.has(candidate)) {
+    candidate = `${base}_${context.next}`;
+    context.next += 1;
+  }
+
+  context.rewritten.set(id, candidate);
+  context.used.add(candidate);
+  return candidate;
+}
+
+function normalizeAnthropicMessagesToolUseIds(
+  messages: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const context = createToolUseIdContext(messages);
+  return messages.map((message) => {
+    if (!Array.isArray(message.content)) return message;
+    const content = (message.content as ContentBlock[]).map((block) => {
+      if (block.type === 'tool_use' && typeof block.id === 'string') {
+        return { ...block, id: normalizeAnthropicToolUseId(block.id, context) };
+      }
+      if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
+        return {
+          ...block,
+          tool_use_id: normalizeAnthropicToolUseId(block.tool_use_id, context),
+        };
+      }
+      return block;
+    });
+    return { ...message, content };
+  });
+}
+
+function splitSystemMessages(messages: Array<Record<string, unknown>>): {
+  messages: Array<Record<string, unknown>>;
+  systemBlocks: ContentBlock[];
+} {
+  const systemBlocks: ContentBlock[] = [];
+  const conversationMessages: Array<Record<string, unknown>> = [];
+
+  for (const message of messages) {
+    if (message.role === 'system' || message.role === 'developer') {
+      systemBlocks.push(...toContentBlocks(message.content));
+    } else {
+      conversationMessages.push(message);
+    }
+  }
+
+  return { messages: conversationMessages, systemBlocks };
+}
+
+function appendSystemBlocks(
+  result: Record<string, unknown>,
+  blocks: ContentBlock[],
+  shouldCache: boolean,
+): void {
+  if (blocks.length === 0) return;
+
+  let systemBlocks: ContentBlock[] = [];
+  if (typeof result.system === 'string') {
+    if (result.system) systemBlocks.push({ type: 'text', text: result.system });
+  } else if (Array.isArray(result.system)) {
+    systemBlocks = (result.system as ContentBlock[]).map((block) => ({ ...block }));
+  }
+
+  systemBlocks.push(...blocks.map((block) => ({ ...block })));
+  if (shouldCache) {
+    for (const block of systemBlocks) delete block.cache_control;
+    systemBlocks[systemBlocks.length - 1].cache_control = CACHE;
+  }
+  result.system = systemBlocks;
+}
+
 /* ── Request helpers ── */
 
 function extractSystemBlocks(messages: OpenAIMessage[]): ContentBlock[] {
@@ -329,27 +441,39 @@ export function applyAnthropicMessagesMutations(
 
   if (result.max_tokens === undefined) result.max_tokens = 4096;
 
+  const normalizedMessages = Array.isArray(body.messages)
+    ? normalizeAnthropicMessagesToolUseIds(body.messages as Array<Record<string, unknown>>)
+    : undefined;
+  const splitMessages = normalizedMessages ? splitSystemMessages(normalizedMessages) : undefined;
+  const messages = splitMessages?.messages;
+  if (messages) result.messages = messages;
+  if (splitMessages) appendSystemBlocks(result, splitMessages.systemBlocks, shouldCache);
+
   const thinkingLookup = options?.thinkingLookup;
-  if (thinkingLookup && Array.isArray(body.messages)) {
-    result.messages = (body.messages as Array<Record<string, unknown>>).map((m) => {
+  if (messages) {
+    result.messages = messages.map((m) => {
       if (m.role !== 'assistant' || !Array.isArray(m.content)) return m;
       const content = m.content as ContentBlock[];
       const firstToolUse = content.find((b) => b.type === 'tool_use');
-      if (!firstToolUse || typeof firstToolUse.id !== 'string') return m;
-      // Native Messages clients may already echo the previous assistant's
-      // signed thinking blocks before the tool_use block. Prepending the
-      // cached copy in that case would duplicate signed blocks and the
-      // upstream would reject the conversation. Only replay when the turn
-      // is missing the thinking prelude.
-      const alreadyHasThinking = content.some(
-        (b) => b.type === 'thinking' || b.type === 'redacted_thinking',
+      const contentWithoutThinking = content.filter(
+        (b) => b.type !== 'thinking' && b.type !== 'redacted_thinking',
       );
-      if (alreadyHasThinking) return m;
-      const cached = thinkingLookup(firstToolUse.id);
-      if (!cached || cached.length === 0) return m;
-      return { ...m, content: [...(cached as ContentBlock[]), ...content] };
+      if (!firstToolUse || typeof firstToolUse.id !== 'string') {
+        return contentWithoutThinking.length === content.length
+          ? m
+          : { ...m, content: contentWithoutThinking };
+      }
+      const cached = thinkingLookup?.(firstToolUse.id);
+      if (cached && cached.length > 0) {
+        return { ...m, content: [...(cached as ContentBlock[]), ...contentWithoutThinking] };
+      }
+      return contentWithoutThinking.length === content.length
+        ? m
+        : { ...m, content: contentWithoutThinking };
     });
   }
+
+  delete result.context_management;
 
   return result;
 }

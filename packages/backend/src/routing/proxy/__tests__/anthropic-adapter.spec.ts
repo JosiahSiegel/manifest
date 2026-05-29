@@ -2126,6 +2126,89 @@ describe('Anthropic Adapter', () => {
       expect(result.max_tokens).toBe(256);
     });
 
+    it('normalizes invalid tool_use ids and matching tool_result ids', () => {
+      const inbound = {
+        messages: [
+          { role: 'user', content: 'run the tool' },
+          {
+            role: 'assistant',
+            content: [
+              { type: 'tool_use', id: 'call.invalid:id', name: 'lookup', input: { q: 'cats' } },
+            ],
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'tool_result', tool_use_id: 'call.invalid:id', content: 'cats found' },
+            ],
+          },
+        ],
+      };
+
+      const result = applyAnthropicMessagesMutations(inbound);
+
+      const messages = result.messages as Array<Record<string, unknown>>;
+      const assistantContent = messages[1].content as Array<Record<string, unknown>>;
+      const userContent = messages[2].content as Array<Record<string, unknown>>;
+      expect(assistantContent[0].id).toBe('call_invalid_id');
+      expect(userContent[0].tool_use_id).toBe('call_invalid_id');
+      expect((inbound.messages[1].content[0] as Record<string, unknown>).id).toBe(
+        'call.invalid:id',
+      );
+    });
+
+    it('avoids collisions when normalizing invalid tool_use ids', () => {
+      const result = applyAnthropicMessagesMutations({
+        messages: [
+          {
+            role: 'assistant',
+            content: [
+              { type: 'tool_use', id: 'call_invalid_id', name: 'existing', input: {} },
+              { type: 'tool_use', id: 'call.invalid:id', name: 'lookup', input: {} },
+            ],
+          },
+          {
+            role: 'user',
+            content: [{ type: 'tool_result', tool_use_id: 'call.invalid:id', content: 'ok' }],
+          },
+        ],
+      });
+
+      const messages = result.messages as Array<Record<string, unknown>>;
+      const assistantContent = messages[0].content as Array<Record<string, unknown>>;
+      const userContent = messages[1].content as Array<Record<string, unknown>>;
+      expect(assistantContent[0].id).toBe('call_invalid_id');
+      expect(assistantContent[1].id).toBe('call_invalid_id_1');
+      expect(userContent[0].tool_use_id).toBe('call_invalid_id_1');
+    });
+
+    it('strips context_management before forwarding to Anthropic', () => {
+      const result = applyAnthropicMessagesMutations({
+        messages: [{ role: 'user', content: 'hi' }],
+        context_management: { edits: [{ type: 'clear_tool_uses_20250919' }] },
+      });
+
+      expect(result).not.toHaveProperty('context_management');
+    });
+
+    it('moves system-role messages into top-level system blocks', () => {
+      const result = applyAnthropicMessagesMutations({
+        messages: [
+          { role: 'system', content: 'You are concise.' },
+          { role: 'developer', content: [{ type: 'text', text: 'Prefer bullets.' }] },
+          { role: 'user', content: 'hi' },
+        ],
+        system: [{ type: 'text', text: 'Existing system.' }],
+      });
+
+      expect(result.messages).toEqual([{ role: 'user', content: 'hi' }]);
+      expect(result.system).toEqual([
+        { type: 'text', text: 'Existing system.' },
+        { type: 'text', text: 'You are concise.' },
+        { type: 'text', text: 'Prefer bullets.', cache_control: { type: 'ephemeral' } },
+      ]);
+    });
+
     it('replays cached thinking blocks ahead of tool_use in assistant turns', () => {
       const cached = [{ type: 'thinking' as const, thinking: 'searching', signature: 'sig' }];
       const result = applyAnthropicMessagesMutations(
@@ -2149,15 +2232,12 @@ describe('Anthropic Adapter', () => {
       expect(content[1]).toMatchObject({ type: 'tool_use', id: 'call_1' });
     });
 
-    it('does not duplicate thinking blocks the client already echoed', () => {
-      // Native Messages clients echo signed thinking blocks back to satisfy
-      // Anthropic's signature chain. Replaying a cached copy on top would
-      // duplicate signed blocks and the upstream would reject the request.
-      const cached = [{ type: 'thinking' as const, thinking: 'old', signature: 'sigA' }];
+    it('replaces echoed thinking blocks with cached thinking blocks', () => {
+      const cached = [{ type: 'thinking' as const, thinking: 'cached', signature: 'sigA' }];
       const echoed = {
         role: 'assistant',
         content: [
-          { type: 'thinking', thinking: 'echoed', signature: 'sigA' },
+          { type: 'thinking', thinking: 'echoed', signature: 'stale' },
           { type: 'tool_use', id: 'call_1', name: 'web_search', input: { q: 'cats' } },
         ],
       };
@@ -2166,7 +2246,31 @@ describe('Anthropic Adapter', () => {
         { thinkingLookup: () => cached },
       );
       const messages = result.messages as Array<Record<string, unknown>>;
-      expect(messages[1].content).toEqual(echoed.content);
+      expect(messages[1].content).toEqual([
+        { type: 'thinking', thinking: 'cached', signature: 'sigA' },
+        { type: 'tool_use', id: 'call_1', name: 'web_search', input: { q: 'cats' } },
+      ]);
+    });
+
+    it('strips echoed thinking blocks when no cached replacement exists', () => {
+      const result = applyAnthropicMessagesMutations({
+        messages: [
+          { role: 'user', content: 'find cats' },
+          {
+            role: 'assistant',
+            content: [
+              { type: 'thinking', thinking: 'echoed', signature: 'stale' },
+              { type: 'redacted_thinking', data: 'opaque' },
+              { type: 'tool_use', id: 'call_1', name: 'web_search', input: { q: 'cats' } },
+            ],
+          },
+        ],
+      });
+
+      const messages = result.messages as Array<Record<string, unknown>>;
+      expect(messages[1].content).toEqual([
+        { type: 'tool_use', id: 'call_1', name: 'web_search', input: { q: 'cats' } },
+      ]);
     });
 
     it('does not touch messages when thinkingLookup returns nothing', () => {
