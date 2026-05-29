@@ -5,8 +5,19 @@ const RATE_WINDOW_MS = 60_000;
 const RATE_MAX_REQUESTS = 200;
 const IP_RATE_MAX_REQUESTS = 500;
 const MAX_RATE_ENTRIES = 50_000;
-const CONCURRENCY_MAX = 10;
+const DEFAULT_CONCURRENCY_MAX = 10;
+const CONCURRENCY_MAX = positiveIntegerEnv('CONCURRENCY_MAX', DEFAULT_CONCURRENCY_MAX);
 const CLEANUP_INTERVAL_MS = 60_000;
+
+function positiveIntegerEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) {
+    return fallback;
+  }
+
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
 
 interface RateEntry {
   count: number;
