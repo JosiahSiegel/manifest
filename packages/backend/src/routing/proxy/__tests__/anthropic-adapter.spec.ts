@@ -2191,6 +2191,24 @@ describe('Anthropic Adapter', () => {
       expect(result).not.toHaveProperty('context_management');
     });
 
+    it('moves system-role messages into top-level system blocks', () => {
+      const result = applyAnthropicMessagesMutations({
+        messages: [
+          { role: 'system', content: 'You are concise.' },
+          { role: 'developer', content: [{ type: 'text', text: 'Prefer bullets.' }] },
+          { role: 'user', content: 'hi' },
+        ],
+        system: [{ type: 'text', text: 'Existing system.' }],
+      });
+
+      expect(result.messages).toEqual([{ role: 'user', content: 'hi' }]);
+      expect(result.system).toEqual([
+        { type: 'text', text: 'Existing system.' },
+        { type: 'text', text: 'You are concise.' },
+        { type: 'text', text: 'Prefer bullets.', cache_control: { type: 'ephemeral' } },
+      ]);
+    });
+
     it('replays cached thinking blocks ahead of tool_use in assistant turns', () => {
       const cached = [{ type: 'thinking' as const, thinking: 'searching', signature: 'sig' }];
       const result = applyAnthropicMessagesMutations(

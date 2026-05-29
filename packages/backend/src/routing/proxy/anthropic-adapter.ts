@@ -147,6 +147,46 @@ function normalizeAnthropicMessagesToolUseIds(
   });
 }
 
+function splitSystemMessages(messages: Array<Record<string, unknown>>): {
+  messages: Array<Record<string, unknown>>;
+  systemBlocks: ContentBlock[];
+} {
+  const systemBlocks: ContentBlock[] = [];
+  const conversationMessages: Array<Record<string, unknown>> = [];
+
+  for (const message of messages) {
+    if (message.role === 'system' || message.role === 'developer') {
+      systemBlocks.push(...toContentBlocks(message.content));
+    } else {
+      conversationMessages.push(message);
+    }
+  }
+
+  return { messages: conversationMessages, systemBlocks };
+}
+
+function appendSystemBlocks(
+  result: Record<string, unknown>,
+  blocks: ContentBlock[],
+  shouldCache: boolean,
+): void {
+  if (blocks.length === 0) return;
+
+  let systemBlocks: ContentBlock[] = [];
+  if (typeof result.system === 'string') {
+    if (result.system) systemBlocks.push({ type: 'text', text: result.system });
+  } else if (Array.isArray(result.system)) {
+    systemBlocks = (result.system as ContentBlock[]).map((block) => ({ ...block }));
+  }
+
+  systemBlocks.push(...blocks.map((block) => ({ ...block })));
+  if (shouldCache) {
+    for (const block of systemBlocks) delete block.cache_control;
+    systemBlocks[systemBlocks.length - 1].cache_control = CACHE;
+  }
+  result.system = systemBlocks;
+}
+
 /* ── Request helpers ── */
 
 function extractSystemBlocks(messages: OpenAIMessage[]): ContentBlock[] {
@@ -401,10 +441,13 @@ export function applyAnthropicMessagesMutations(
 
   if (result.max_tokens === undefined) result.max_tokens = 4096;
 
-  const messages = Array.isArray(body.messages)
+  const normalizedMessages = Array.isArray(body.messages)
     ? normalizeAnthropicMessagesToolUseIds(body.messages as Array<Record<string, unknown>>)
     : undefined;
+  const splitMessages = normalizedMessages ? splitSystemMessages(normalizedMessages) : undefined;
+  const messages = splitMessages?.messages;
   if (messages) result.messages = messages;
+  if (splitMessages) appendSystemBlocks(result, splitMessages.systemBlocks, shouldCache);
 
   const thinkingLookup = options?.thinkingLookup;
   if (thinkingLookup && messages) {
