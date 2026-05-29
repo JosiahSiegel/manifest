@@ -55,6 +55,12 @@ function shouldForwardAnthropicThinking(thinking: unknown, model: string): boole
   return true;
 }
 
+function isThinkingBlock(block: unknown): boolean {
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return false;
+  const type = (block as Record<string, unknown>).type;
+  return type === 'thinking' || type === 'redacted_thinking';
+}
+
 /**
  * System prompt required by Anthropic's subscription OAuth API to unlock
  * sonnet/opus model families. Without it, subscription tokens can only
@@ -352,23 +358,27 @@ export function applyAnthropicMessagesMutations(
   if (result.max_tokens === undefined) result.max_tokens = 4096;
 
   const thinkingLookup = options?.thinkingLookup;
-  if (thinkingLookup && Array.isArray(result.messages)) {
-    result.messages = (result.messages as Array<Record<string, unknown>>).map((m) => {
+  const stripSignedThinking = options?.injectSubscriptionIdentity;
+  if ((thinkingLookup || stripSignedThinking) && Array.isArray(body.messages)) {
+    result.messages = (body.messages as Array<Record<string, unknown>>).map((m) => {
       if (m.role !== 'assistant' || !Array.isArray(m.content)) return m;
-      const content = m.content as ContentBlock[];
+      const content = stripSignedThinking
+        ? (m.content as ContentBlock[]).filter((b) => !isThinkingBlock(b))
+        : (m.content as ContentBlock[]);
       const firstToolUse = content.find((b) => b.type === 'tool_use');
-      if (!firstToolUse || typeof firstToolUse.id !== 'string') return m;
+      if (!firstToolUse || typeof firstToolUse.id !== 'string') {
+        return content === m.content ? m : { ...m, content };
+      }
       // Native Messages clients may already echo the previous assistant's
       // signed thinking blocks before the tool_use block. Prepending the
       // cached copy in that case would duplicate signed blocks and the
       // upstream would reject the conversation. Only replay when the turn
       // is missing the thinking prelude.
-      const alreadyHasThinking = content.some(
-        (b) => b.type === 'thinking' || b.type === 'redacted_thinking',
-      );
-      if (alreadyHasThinking) return m;
+      const alreadyHasThinking = content.some(isThinkingBlock);
+      if (alreadyHasThinking || !thinkingLookup)
+        return content === m.content ? m : { ...m, content };
       const cached = thinkingLookup(firstToolUse.id);
-      if (!cached || cached.length === 0) return m;
+      if (!cached || cached.length === 0) return content === m.content ? m : { ...m, content };
       return { ...m, content: [...(cached as ContentBlock[]), ...content] };
     });
   }
