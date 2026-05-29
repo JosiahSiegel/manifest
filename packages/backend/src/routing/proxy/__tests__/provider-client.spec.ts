@@ -644,6 +644,49 @@ describe('ProviderClient', () => {
       const tools = sentBody.tools as Array<{ cache_control?: unknown }>;
       expect(tools[0].cache_control).toEqual({ type: 'ephemeral' });
     });
+
+    it('does not replay cached thinking blocks for Anthropic subscription auth', async () => {
+      mockFetch.mockResolvedValue(new Response('{}', { status: 200 }));
+      const thinkingLookup = jest.fn(() => [
+        { type: 'thinking', thinking: 'cached', signature: 'stale-signature' },
+      ]);
+
+      await client.forward({
+        provider: 'anthropic',
+        apiKey: 'oauth-token',
+        model: 'claude-sonnet-4-20250514',
+        body: {
+          messages: [
+            { role: 'user', content: 'search' },
+            {
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call_1',
+                  type: 'function',
+                  function: { name: 'search', arguments: '{}' },
+                },
+              ],
+            },
+          ],
+        },
+        stream: false,
+        authType: 'subscription',
+        thinkingLookup,
+      });
+
+      expect(thinkingLookup).not.toHaveBeenCalled();
+      const sentBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      const messages = sentBody.messages as Array<{
+        role: string;
+        content: Array<Record<string, unknown>>;
+      }>;
+      expect(messages[1].content).toEqual([
+        { type: 'tool_use', id: 'call_1', name: 'search', input: {} },
+      ]);
+      expect(sentBody.system[0].text).toMatch(/Claude agent/);
+    });
   });
 
   describe('Google provider', () => {

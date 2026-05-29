@@ -2169,6 +2169,30 @@ describe('Anthropic Adapter', () => {
       expect(messages[1].content).toEqual(echoed.content);
     });
 
+    it('strips client-echoed thinking blocks when subscription identity is injected', () => {
+      const result = applyAnthropicMessagesMutations(
+        {
+          messages: [
+            { role: 'user', content: 'find cats' },
+            {
+              role: 'assistant',
+              content: [
+                { type: 'thinking', thinking: 'echoed', signature: 'sigA' },
+                { type: 'redacted_thinking', data: 'redacted' },
+                { type: 'tool_use', id: 'call_1', name: 'web_search', input: { q: 'cats' } },
+              ],
+            },
+          ],
+        },
+        { injectSubscriptionIdentity: true },
+      );
+
+      const messages = result.messages as Array<Record<string, unknown>>;
+      expect(messages[1].content).toEqual([
+        { type: 'tool_use', id: 'call_1', name: 'web_search', input: { q: 'cats' } },
+      ]);
+    });
+
     it('does not touch messages when thinkingLookup returns nothing', () => {
       const inboundMessages = [
         { role: 'user', content: 'hi' },
