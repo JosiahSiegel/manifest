@@ -277,6 +277,37 @@ describe('ProxyRateLimiter', () => {
       expect(() => limiter.acquireSlot('user-1')).toThrow(HttpException);
     });
 
+    it('supports CONCURRENCY_MAX overrides', async () => {
+      const originalConcurrencyMax = process.env['CONCURRENCY_MAX'];
+      process.env['CONCURRENCY_MAX'] = '12';
+      jest.resetModules();
+      const { ProxyRateLimiter: ConfiguredProxyRateLimiter } =
+        await import('../proxy-rate-limiter');
+      const configuredLimiter = new ConfiguredProxyRateLimiter();
+
+      try {
+        for (let i = 0; i < 12; i++) {
+          expect(() => configuredLimiter.acquireSlot('user-1')).not.toThrow();
+        }
+
+        try {
+          configuredLimiter.acquireSlot('user-1');
+          fail('Expected HttpException');
+        } catch (err) {
+          expect((err as HttpException).getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+          expect((err as HttpException).message).toContain('[🦚 Manifest M203]');
+        }
+      } finally {
+        configuredLimiter.onModuleDestroy();
+        if (originalConcurrencyMax === undefined) {
+          delete process.env['CONCURRENCY_MAX'];
+        } else {
+          process.env['CONCURRENCY_MAX'] = originalConcurrencyMax;
+        }
+        jest.resetModules();
+      }
+    });
+
     it('throws with correct status and message on concurrency exceeded', () => {
       for (let i = 0; i < 10; i++) {
         limiter.acquireSlot('user-1');
