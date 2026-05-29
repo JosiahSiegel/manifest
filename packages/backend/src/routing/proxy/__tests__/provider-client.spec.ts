@@ -2006,6 +2006,7 @@ describe('ProviderClient', () => {
       metadata: { user: 'test' },
       service_tier: 'default',
       stream_options: { include_usage: true },
+      context_management: { edits: [{ type: 'clear_tool_uses_20250919' }] },
     };
     const makeBodyWithReasoningContent = () => ({
       messages: [
@@ -2045,6 +2046,7 @@ describe('ProviderClient', () => {
       expect(sentBody.metadata).toBeUndefined();
       expect(sentBody.service_tier).toBeUndefined();
       expect(sentBody.stream_options).toBeUndefined();
+      expect(sentBody.context_management).toBeUndefined();
       expect(sentBody.messages).toEqual(bodyWithOpenAiFields.messages);
       expect(sentBody.temperature).toBe(0.7);
     });
