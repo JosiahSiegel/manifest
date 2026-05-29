@@ -120,6 +120,18 @@ jobs:
                     cache-to: type=gha,mode=max
           '''))
 
+          release_path = Path('.github/workflows/release.yml')
+          release_text = release_path.read_text()
+          release_text = release_text.replace(
+              "  release:\n    runs-on: ubuntu-latest",
+              "  release:\n    # Fork: skip — no changesets GitHub App configured, would fail.\n    if: github.repository == 'mnfst/manifest'\n    runs-on: ubuntu-latest",
+          )
+          release_text = release_text.replace(
+              "    if: needs.release.outputs.should_publish == 'true'",
+              "    if: needs.release.outputs.should_publish == 'true' && github.repository == 'mnfst/manifest'",
+          )
+          release_path.write_text(release_text)
+
           path = Path('packages/backend/src/routing/proxy/proxy-rate-limiter.ts')
           text = path.read_text()
           old = """const MAX_RATE_ENTRIES = 50_000;\nconst CONCURRENCY_MAX = 10;\nconst CLEANUP_INTERVAL_MS = 60_000;\n"""
@@ -144,6 +156,7 @@ jobs:
         run: |
           git add .github/workflows/housekeeping-overlay.yml \
             .github/workflows/docker-image.yml \
+            .github/workflows/release.yml \
             packages/backend/src/routing/proxy/proxy-rate-limiter.ts \
             packages/backend/src/routing/proxy/__tests__/proxy-rate-limiter.spec.ts
 
