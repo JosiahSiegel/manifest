@@ -16,7 +16,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: docker-image-refs/heads/main
+  group: docker-image-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -39,13 +39,13 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ github.token }}
+          password: ${{ secrets.GHCR_TOKEN || secrets.SYNC_UPSTREAM_TOKEN }}
 
       - name: Generate metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: 
+          images: ${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
@@ -57,8 +57,8 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
-          push: true
-          tags: 
-          labels: 
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
