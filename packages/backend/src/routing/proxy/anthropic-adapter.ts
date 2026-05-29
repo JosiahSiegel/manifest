@@ -450,24 +450,26 @@ export function applyAnthropicMessagesMutations(
   if (splitMessages) appendSystemBlocks(result, splitMessages.systemBlocks, shouldCache);
 
   const thinkingLookup = options?.thinkingLookup;
-  if (thinkingLookup && messages) {
+  if (messages) {
     result.messages = messages.map((m) => {
       if (m.role !== 'assistant' || !Array.isArray(m.content)) return m;
       const content = m.content as ContentBlock[];
       const firstToolUse = content.find((b) => b.type === 'tool_use');
-      if (!firstToolUse || typeof firstToolUse.id !== 'string') return m;
-      // Native Messages clients may already echo the previous assistant's
-      // signed thinking blocks before the tool_use block. Prepending the
-      // cached copy in that case would duplicate signed blocks and the
-      // upstream would reject the conversation. Only replay when the turn
-      // is missing the thinking prelude.
-      const alreadyHasThinking = content.some(
-        (b) => b.type === 'thinking' || b.type === 'redacted_thinking',
+      const contentWithoutThinking = content.filter(
+        (b) => b.type !== 'thinking' && b.type !== 'redacted_thinking',
       );
-      if (alreadyHasThinking) return m;
-      const cached = thinkingLookup(firstToolUse.id);
-      if (!cached || cached.length === 0) return m;
-      return { ...m, content: [...(cached as ContentBlock[]), ...content] };
+      if (!firstToolUse || typeof firstToolUse.id !== 'string') {
+        return contentWithoutThinking.length === content.length
+          ? m
+          : { ...m, content: contentWithoutThinking };
+      }
+      const cached = thinkingLookup?.(firstToolUse.id);
+      if (cached && cached.length > 0) {
+        return { ...m, content: [...(cached as ContentBlock[]), ...contentWithoutThinking] };
+      }
+      return contentWithoutThinking.length === content.length
+        ? m
+        : { ...m, content: contentWithoutThinking };
     });
   }
 

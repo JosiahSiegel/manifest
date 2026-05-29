@@ -2232,15 +2232,12 @@ describe('Anthropic Adapter', () => {
       expect(content[1]).toMatchObject({ type: 'tool_use', id: 'call_1' });
     });
 
-    it('does not duplicate thinking blocks the client already echoed', () => {
-      // Native Messages clients echo signed thinking blocks back to satisfy
-      // Anthropic's signature chain. Replaying a cached copy on top would
-      // duplicate signed blocks and the upstream would reject the request.
-      const cached = [{ type: 'thinking' as const, thinking: 'old', signature: 'sigA' }];
+    it('replaces echoed thinking blocks with cached thinking blocks', () => {
+      const cached = [{ type: 'thinking' as const, thinking: 'cached', signature: 'sigA' }];
       const echoed = {
         role: 'assistant',
         content: [
-          { type: 'thinking', thinking: 'echoed', signature: 'sigA' },
+          { type: 'thinking', thinking: 'echoed', signature: 'stale' },
           { type: 'tool_use', id: 'call_1', name: 'web_search', input: { q: 'cats' } },
         ],
       };
@@ -2249,7 +2246,31 @@ describe('Anthropic Adapter', () => {
         { thinkingLookup: () => cached },
       );
       const messages = result.messages as Array<Record<string, unknown>>;
-      expect(messages[1].content).toEqual(echoed.content);
+      expect(messages[1].content).toEqual([
+        { type: 'thinking', thinking: 'cached', signature: 'sigA' },
+        { type: 'tool_use', id: 'call_1', name: 'web_search', input: { q: 'cats' } },
+      ]);
+    });
+
+    it('strips echoed thinking blocks when no cached replacement exists', () => {
+      const result = applyAnthropicMessagesMutations({
+        messages: [
+          { role: 'user', content: 'find cats' },
+          {
+            role: 'assistant',
+            content: [
+              { type: 'thinking', thinking: 'echoed', signature: 'stale' },
+              { type: 'redacted_thinking', data: 'opaque' },
+              { type: 'tool_use', id: 'call_1', name: 'web_search', input: { q: 'cats' } },
+            ],
+          },
+        ],
+      });
+
+      const messages = result.messages as Array<Record<string, unknown>>;
+      expect(messages[1].content).toEqual([
+        { type: 'tool_use', id: 'call_1', name: 'web_search', input: { q: 'cats' } },
+      ]);
     });
 
     it('does not touch messages when thinkingLookup returns nothing', () => {
