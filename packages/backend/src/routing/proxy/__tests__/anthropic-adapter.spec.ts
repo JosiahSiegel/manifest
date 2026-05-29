@@ -2169,6 +2169,41 @@ describe('Anthropic Adapter', () => {
       expect(messages[1].content).toEqual(echoed.content);
     });
 
+    it('strips client-echoed thinking blocks when subscription identity is injected', () => {
+      const result = applyAnthropicMessagesMutations(
+        {
+          system: 'Existing instructions.',
+          messages: [
+            { role: 'system', content: 'Additional instructions.' },
+            { role: 'user', content: 'find cats' },
+            {
+              role: 'assistant',
+              content: [
+                { type: 'thinking', thinking: 'echoed', signature: 'sigA' },
+                { type: 'redacted_thinking', data: 'redacted' },
+                { type: 'tool_use', id: 'call_1', name: 'web_search', input: { q: 'cats' } },
+              ],
+            },
+          ],
+        },
+        { injectSubscriptionIdentity: true },
+      );
+
+      expect(result.system).toEqual([
+        expect.objectContaining({ type: 'text', text: expect.stringContaining('Claude agent') }),
+        { type: 'text', text: 'Existing instructions.' },
+        { type: 'text', text: 'Additional instructions.', cache_control: { type: 'ephemeral' } },
+      ]);
+      const messages = result.messages as Array<Record<string, unknown>>;
+      expect(messages).toEqual([
+        { role: 'user', content: 'find cats' },
+        {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 'call_1', name: 'web_search', input: { q: 'cats' } }],
+        },
+      ]);
+    });
+
     it('does not touch messages when thinkingLookup returns nothing', () => {
       const inboundMessages = [
         { role: 'user', content: 'hi' },
