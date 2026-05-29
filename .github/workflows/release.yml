@@ -12,6 +12,10 @@ permissions:
 
 jobs:
   release:
+    # Upstream-only: this fork (JosiahSiegel/manifest) does not configure the
+    # changesets GitHub App, so the create-github-app-token step would fail.
+    # Gating by repository keeps the file conflict-free with upstream merges.
+    if: github.repository == 'mnfst/manifest'
     runs-on: ubuntu-latest
     outputs:
       should_publish: ${{ steps.detect.outputs.should_publish }}
@@ -74,7 +78,7 @@ jobs:
 
   github-release:
     needs: release
-    if: needs.release.outputs.should_publish == 'true'
+    if: needs.release.outputs.should_publish == 'true' && github.repository == 'mnfst/manifest'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -108,7 +112,7 @@ jobs:
 
   publish-docker:
     needs: release
-    if: needs.release.outputs.should_publish == 'true'
+    if: needs.release.outputs.should_publish == 'true' && github.repository == 'mnfst/manifest'
     uses: ./.github/workflows/docker.yml
     secrets: inherit
     permissions:

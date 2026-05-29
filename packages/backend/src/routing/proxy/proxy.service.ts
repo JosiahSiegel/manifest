@@ -39,6 +39,7 @@ import {
 import {
   ProxyApiMode,
   ProxyRequestOptions,
+  NormalizedInboundHeaders,
   SignatureLookup,
   ThinkingBlockLookup,
   ReasoningContentLookup,
@@ -180,6 +181,7 @@ export class ProxyService {
     );
     const responseMode = resolved.response_mode ?? DEFAULT_RESPONSE_MODE;
     const stream = body.stream === true || responseMode === 'stream';
+    const inboundHeaders = this.normalizeInboundHeaders(headers);
     if (!resolved.route) {
       this.logger.warn(
         `No route available for agent=${agentId}: ` +
@@ -265,6 +267,7 @@ export class ProxyService {
       thinkingLookup,
       reasoningContentLookup,
       paramMergeContext,
+      inboundHeaders,
     });
 
     if (!forward.response.ok && shouldTriggerFallback(forward.response.status)) {
@@ -284,6 +287,7 @@ export class ProxyService {
         reasoningContentLookup,
         apiMode,
         paramMergeContext,
+        inboundHeaders,
       });
       if (fallbackResult) return fallbackResult;
     }
@@ -347,6 +351,7 @@ export class ProxyService {
         reasoningContentLookup,
         apiMode,
         paramMergeContext,
+        inboundHeaders,
       });
       if (fallbackResult) return fallbackResult;
 
@@ -469,6 +474,7 @@ export class ProxyService {
     reasoningContentLookup: ReasoningContentLookup;
     apiMode: ProxyApiMode;
     paramMergeContext: ParamMergeContext;
+    inboundHeaders?: NormalizedInboundHeaders;
   }): Promise<ProxyResult | null> {
     const {
       agentId,
@@ -527,6 +533,7 @@ export class ProxyService {
       fallbackRoutes,
       args.paramMergeContext,
       args.reasoningContentLookup,
+      args.inboundHeaders,
     );
 
     this.recordTierIfScoring(sessionKey, resolved.tier);
@@ -690,6 +697,18 @@ export class ProxyService {
       );
     }
     return false;
+  }
+
+  private normalizeInboundHeaders(
+    headers: ProxyRequestOptions['headers'],
+  ): NormalizedInboundHeaders | undefined {
+    if (!headers) return undefined;
+    return Object.fromEntries(
+      Object.entries(headers).map(([name, value]) => [
+        name.toLowerCase(),
+        Array.isArray(value) ? value.join(',') : value,
+      ]),
+    );
   }
 
   private buildNoProviderResult(stream: boolean, agentName?: string): ProxyResult {

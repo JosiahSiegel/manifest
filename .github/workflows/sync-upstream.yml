@@ -1,0 +1,94 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: '0 10 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'JosiahSiegel/manifest'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out fork
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_UPSTREAM_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Configure git author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/mnfst/manifest.git
+
+      - name: Fetch upstream
+        run: git fetch upstream main
+
+      - name: Prepare sync branch
+        run: |
+          git switch -C sync/upstream-main origin/main
+          git rebase upstream/main
+
+      - name: Detect changes
+        id: changes
+        run: |
+          if git diff --quiet origin/main..HEAD; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write pull request body
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          cat > /tmp/sync-pr-body.md <<'EOF'
+          ## Summary
+          - Rebase this fork on top of `mnfst/manifest` upstream `main`.
+          - Preserve fork-only workflow changes for GHCR Docker publishing and upstream-only release gates.
+
+          ## Notes
+          - If this workflow fails during rebase, resolve the conflict locally by keeping upstream changes plus the fork gates in `.github/workflows/release.yml` and `.github/workflows/docker.yml`.
+          EOF
+
+      - name: Push sync branch
+        if: steps.changes.outputs.has_changes == 'true'
+        run: git push --force-with-lease origin sync/upstream-main
+
+      - name: Open or update pull request
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_UPSTREAM_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          title="chore: sync upstream main"
+          head="sync/upstream-main"
+
+          echo "Looking for existing PR with base=main head=$head"
+          pr_number="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=main" \
+            --paginate \
+            --jq ".[] | select(.head.ref == \"${head}\") | .number" \
+            2>/dev/null | head -1 || echo "")"
+
+          if [ -n "$pr_number" ]; then
+            echo "Updating existing PR #$pr_number"
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" \
+              -f title="$title" \
+              -F body=@/tmp/sync-pr-body.md
+          else
+            echo "Creating PR with base=main head=$head"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/pulls" \
+              -f title="$title" \
+              -F body=@/tmp/sync-pr-body.md \
+              -f base=main \
+              -f head="$head"
+          fi
