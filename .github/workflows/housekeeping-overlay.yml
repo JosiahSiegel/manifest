@@ -90,7 +90,7 @@ jobs:
 
                 - name: Log in to GHCR
                   if: github.event_name != 'pull_request'
-                  run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+                  run: printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
                 - name: Generate metadata
                   id: meta
