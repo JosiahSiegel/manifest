@@ -93,6 +93,23 @@ describe("validateApiKey", () => {
     expect(validateApiKey(zai, "a".repeat(30))).toEqual({ valid: true });
   });
 
+  it("validates Fireworks AI key prefix and length", () => {
+    const fireworks = getProvider("fireworks")!;
+    expect(validateApiKey(fireworks, "")).toEqual({
+      valid: false,
+      error: "API key is required",
+    });
+    expect(validateApiKey(fireworks, "sk-wrong-prefix-that-is-long-enough")).toEqual({
+      valid: false,
+      error: 'Fireworks AI keys start with "fw_"',
+    });
+    expect(validateApiKey(fireworks, "fw_short")).toEqual({
+      valid: false,
+      error: "Key is too short (minimum 20 characters)",
+    });
+    expect(validateApiKey(fireworks, "fw_" + "a".repeat(20))).toEqual({ valid: true });
+  });
+
   it("validates NVIDIA NIM key length without enforcing an undocumented prefix", () => {
     const nvidia = getProvider("nvidia")!;
     expect(nvidia.keyPlaceholder).toBe("nvapi-...");
@@ -352,6 +369,16 @@ describe("PROVIDERS", () => {
     expect(minimax.subscriptionAuthMode).toBe("device_code");
   });
 
+  it("Moonshot supports Kimi Coding Plan subscription with token flow", () => {
+    const moonshot = PROVIDERS.find((p) => p.id === "moonshot")!;
+    expect(moonshot.supportsSubscription).toBe(true);
+    expect(moonshot.subscriptionLabel).toBe("Kimi Coding Plan");
+    expect(moonshot.subscriptionAuthMode).toBe("token");
+    expect(moonshot.subscriptionKeyPlaceholder).toBe("Paste your Kimi Code API key");
+    expect(moonshot.subscriptionCredentialKind).toBe("api-key");
+    expect(moonshot.subscriptionCredentialName).toBe("Kimi Code");
+  });
+
   it("Ollama Cloud is subscription-only with token paste flow", () => {
     const cloud = PROVIDERS.find((p) => p.id === "ollama-cloud")!;
     expect(cloud).toBeDefined();
@@ -384,6 +411,12 @@ describe("PROVIDERS", () => {
     );
     expect(getSubscriptionProviderKeyUrl("ollama-cloud")).toBe(
       "https://ollama.com/settings/keys",
+    );
+  });
+
+  it("provides a subscription-key URL for Moonshot/Kimi pointing at the Kimi Code console", () => {
+    expect(getSubscriptionProviderKeyUrl("moonshot")).toBe(
+      "https://www.kimi.com/code/console",
     );
   });
 
@@ -431,6 +464,10 @@ describe("PROVIDERS", () => {
 
   it("provides an API key URL for NVIDIA NIM", () => {
     expect(getRoutingProviderApiKeyUrl("nvidia")).toBe("https://build.nvidia.com/settings/api-keys");
+  });
+
+  it("provides an API key URL for Fireworks AI", () => {
+    expect(getRoutingProviderApiKeyUrl("fireworks")).toBe("https://app.fireworks.ai/api-keys");
   });
 
   it("OpenCode Go is subscription-only with a sign-in URL", () => {

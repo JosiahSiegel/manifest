@@ -68,6 +68,7 @@ describe('resolveEndpointKey', () => {
     expect(resolveEndpointKey('anthropic')).toBe('anthropic');
     expect(resolveEndpointKey('google')).toBe('google');
     expect(resolveEndpointKey('deepseek')).toBe('deepseek');
+    expect(resolveEndpointKey('fireworks')).toBe('fireworks');
     expect(resolveEndpointKey('nvidia')).toBe('nvidia');
     expect(resolveEndpointKey('ollama')).toBe('ollama');
     expect(resolveEndpointKey('kilo')).toBe('kilo');
@@ -86,6 +87,11 @@ describe('resolveEndpointKey', () => {
 
   it('resolves alias z.ai to zai', () => {
     expect(resolveEndpointKey('z.ai')).toBe('zai');
+  });
+
+  it('resolves Fireworks AI aliases to fireworks', () => {
+    expect(resolveEndpointKey('fireworks-ai')).toBe('fireworks');
+    expect(resolveEndpointKey('fireworks ai')).toBe('fireworks');
   });
 
   it('resolves qwen and alibaba to qwen', () => {
@@ -110,6 +116,7 @@ describe('resolveEndpointKey', () => {
     expect(known).toContain('google');
     expect(known).toContain('qwen');
     expect(known).toContain('copilot');
+    expect(known).toContain('fireworks');
     expect(known).toContain('openrouter');
     expect(known).toContain('nvidia');
     expect(known).toContain('ollama');
@@ -191,6 +198,18 @@ describe('PROVIDER_ENDPOINTS', () => {
     expect(ep.buildPath('anthropic/claude-sonnet-4.5')).toBe('/chat/completions');
     expect(ep.buildHeaders('kilo-token')).toEqual({
       Authorization: 'Bearer kilo-token',
+      'Content-Type': 'application/json',
+    });
+  });
+
+  it('fireworks uses the Fireworks OpenAI-compatible inference endpoint', () => {
+    const ep = PROVIDER_ENDPOINTS['fireworks'];
+    expect(ep.baseUrl).toBe('https://api.fireworks.ai/inference');
+    expect(ep.format).toBe('openai');
+    expect(ep.streamUsageReporting).toBeUndefined();
+    expect(ep.buildPath('accounts/fireworks/models/deepseek-v3p1')).toBe('/v1/chat/completions');
+    expect(ep.buildHeaders('fw_test_key')).toEqual({
+      Authorization: 'Bearer fw_test_key',
       'Content-Type': 'application/json',
     });
   });
@@ -331,6 +350,24 @@ describe('PROVIDER_ENDPOINTS', () => {
       'Content-Type': 'application/json',
       'anthropic-version': '2023-06-01',
     });
+  });
+
+  it('moonshot-subscription uses Kimi Coding Plan Anthropic-compatible endpoint', () => {
+    const ep = PROVIDER_ENDPOINTS['moonshot-subscription'];
+    expect(ep.baseUrl).toBe('https://api.kimi.com/coding');
+    expect(ep.format).toBe('anthropic');
+    expect(ep.buildPath('kimi-for-coding')).toBe('/v1/messages');
+    expect(ep.skipSubscriptionIdentity).toBe(true);
+  });
+
+  it('moonshot-subscription uses Kimi Code API key headers', () => {
+    const headers = PROVIDER_ENDPOINTS['moonshot-subscription'].buildHeaders('kimi-code-key');
+    expect(headers).toEqual({
+      'x-api-key': 'kimi-code-key',
+      'Content-Type': 'application/json',
+      'anthropic-version': '2023-06-01',
+    });
+    expect(headers.Authorization).toBeUndefined();
   });
 
   it('ollama-cloud points at ollama.com with OpenAI format', () => {
@@ -487,6 +524,10 @@ describe('resolveSubscriptionEndpointKey', () => {
 
   it('returns minimax-subscription for minimax', () => {
     expect(resolveSubscriptionEndpointKey('minimax')).toBe('minimax-subscription');
+  });
+
+  it('returns moonshot-subscription for moonshot', () => {
+    expect(resolveSubscriptionEndpointKey('moonshot')).toBe('moonshot-subscription');
   });
 
   it('returns undefined for providers with no subscription override', () => {
