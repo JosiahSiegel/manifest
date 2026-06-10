@@ -100,6 +100,7 @@ const OPENAI_ONLY_FIELDS = new Set([
   'audio',
   'prediction',
   'reasoning_effort',
+  'context_management',
 ]);
 
 /**
