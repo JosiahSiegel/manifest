@@ -13,8 +13,10 @@ export const ROUTING_PROVIDER_API_KEY_URLS: Record<string, string> = {
   ollama: 'https://ollama.com/download',
   'ollama-cloud': 'https://ollama.com/settings/keys',
   openai: 'https://platform.openai.com/api-keys',
+  'opencode-zen': 'https://opencode.ai/auth',
   openrouter: 'https://openrouter.ai/keys',
   qwen: 'https://www.alibabacloud.com/help/en/model-studio/developer-reference/get-api-key',
+  xiaomi: 'https://platform.xiaomimimo.com/console',
   xai: 'https://docs.x.ai/docs/api-reference',
   zai: 'https://z.ai/manage-apikey/apikey-list',
 };
@@ -29,9 +31,13 @@ export const getRoutingProviderApiKeyUrl = (providerId: string): string | undefi
  * Anthropic setup-tokens come from the Claude Code CLI, not the API console).
  */
 export const SUBSCRIPTION_PROVIDER_KEY_URLS: Record<string, string> = {
+  byteplus: 'https://console.byteplus.com/ark/region:ark+ap-southeast-1/apiKey',
+  commandcode: 'https://commandcode.ai/studio',
+  qwen: 'https://home.qwencloud.com/api-keys',
   moonshot: 'https://www.kimi.com/code/console',
   'ollama-cloud': 'https://ollama.com/settings/keys',
   kiro: 'https://app.kiro.dev',
+  xiaomi: 'https://platform.xiaomimimo.com/token-plan',
   zai: 'https://z.ai/manage-apikey/apikey-list',
 };
 

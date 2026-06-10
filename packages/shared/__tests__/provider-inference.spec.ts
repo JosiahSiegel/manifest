@@ -36,14 +36,21 @@ describe('inferProviderFromModel', () => {
     ['kimi-k2', 'moonshot'],
     ['moonshot-v1', 'moonshot'],
     ['MiniMax-M2.5', 'minimax'],
+    ['mimo-v2.5-pro', 'xiaomi'],
+    ['mimo-v2-flash', 'xiaomi'],
     ['glm-4', 'zai'],
     ['qwen2.5-coder', 'qwen'],
     ['qwq-32b', 'qwen'],
     ['copilot/gpt-5.4', 'copilot'],
     ['copilot/claude-opus-4.6', 'copilot'],
+    ['commandcode/claude-sonnet-4-6', 'commandcode'],
+    ['commandcode/deepseek/deepseek-v4-flash', 'commandcode'],
     ['opencode-go/glm-5.1', 'opencode-go'],
     ['opencode-go/kimi-k2.5', 'opencode-go'],
     ['opencode-go/minimax-m2.7', 'opencode-go'],
+    ['opencode-zen/qwen3.6-plus', 'opencode-zen'],
+    ['opencode-zen/claude-opus-4-7', 'opencode-zen'],
+    ['opencode-zen/gpt-5.5', 'opencode-zen'],
     ['llamacpp/Qwen3.5-9B-Q4_K_M.gguf', 'llamacpp'],
     ['llamacpp/mistral-7b-instruct-v0.3.Q4_K_M.gguf', 'llamacpp'],
     ['openrouter/auto', 'openrouter'],
@@ -63,7 +70,9 @@ describe('inferProviderFromModel', () => {
 
   it('does not treat OpenRouter vendor/model:variant as ollama', () => {
     expect(inferProviderFromModel('anthropic/claude-sonnet-4:thinking')).toBe('openrouter');
-    expect(inferProviderFromModel('nvidia/llama-3.1-nemotron-70b-instruct:extended')).toBe('openrouter');
+    expect(inferProviderFromModel('nvidia/llama-3.1-nemotron-70b-instruct:extended')).toBe(
+      'openrouter',
+    );
     expect(inferProviderFromModel('meta-llama/llama-4-scout:free')).toBe('openrouter');
   });
 
@@ -80,6 +89,7 @@ describe('underlyingGatewayModel', () => {
   it('strips the gateway prefix from gateway model ids', () => {
     expect(underlyingGatewayModel('opencode-go/deepseek-v4-pro')).toBe('deepseek-v4-pro');
     expect(underlyingGatewayModel('opencode-go/kimi-k2.6')).toBe('kimi-k2.6');
+    expect(underlyingGatewayModel('opencode-zen/qwen3.6-plus')).toBe('qwen3.6-plus');
   });
 
   it('returns null for non-gateway model ids', () => {
@@ -98,12 +108,27 @@ describe('resolveUnderlyingModelIdentity', () => {
       provider: 'moonshot',
       model: 'kimi-k2.6',
     });
+    expect(resolveUnderlyingModelIdentity('opencode-zen', 'opencode-zen/qwen3.6-plus')).toEqual({
+      provider: 'qwen',
+      model: 'qwen3.6-plus',
+    });
+  });
+
+  it('resolves MiMo gateway models to Xiaomi', () => {
+    expect(resolveUnderlyingModelIdentity('opencode-go', 'opencode-go/mimo-v2.5')).toEqual({
+      provider: 'xiaomi',
+      model: 'mimo-v2.5',
+    });
   });
 
   it('returns an undefined provider when the underlying id matches no known provider', () => {
-    expect(resolveUnderlyingModelIdentity('opencode-go', 'opencode-go/mimo-v25')).toEqual({
+    expect(resolveUnderlyingModelIdentity('opencode-go', 'opencode-go/big-pickle')).toEqual({
       provider: undefined,
-      model: 'mimo-v25',
+      model: 'big-pickle',
+    });
+    expect(resolveUnderlyingModelIdentity('opencode-zen', 'opencode-zen/big-pickle')).toEqual({
+      provider: undefined,
+      model: 'big-pickle',
     });
   });
 
